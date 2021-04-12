@@ -1,4 +1,4 @@
-import 'package:rate_limit/rate_limit.dart';
+import 'package:rate_limiter/rate_limiter.dart';
 
 void main() {
   var count = 0;

@@ -1,4 +1,4 @@
-# rate_limit
+# rate_limiter
 
 A new Flutter package.
 

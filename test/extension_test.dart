@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:rate_limit/rate_limit.dart';
+import 'package:rate_limiter/rate_limiter.dart';
 
 void main() {
   test('should convert regular function into a debounce function', () {

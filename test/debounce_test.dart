@@ -1,4 +1,4 @@
-import 'package:rate_limit/rate_limit.dart';
+import 'package:rate_limiter/rate_limiter.dart';
 import 'package:test/test.dart';
 
 import 'utils.dart';

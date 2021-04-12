@@ -1,4 +1,4 @@
-library rate_limit;
+library rate_limiter;
 
 export 'src/debounce.dart';
 export 'src/throttle.dart';
