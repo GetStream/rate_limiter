@@ -38,7 +38,7 @@ const _undefined = Object();
 ///   );
 ///
 ///   void onSearchQueryChanged(query) {
-///      debouncedFetchData(query);
+///      debouncedFetchData([query]);
 ///   }
 /// ```
 ///
@@ -169,8 +169,37 @@ class Debounce {
   /// True if there are functions remaining to get invoked.
   bool get isPending => _timer != null;
 
-  /// Calls/invokes this class like a function.
-  /// Pass [args] and [namedArgs] to be used while invoking [_func].
+  /// Dynamically call this [Debounce] with the specified arguments.
+  ///
+  /// Acts the same as calling [_func] with positional arguments
+  /// corresponding to the elements of [args] and
+  /// named arguments corresponding to the elements of [namedArgs].
+  ///
+  /// This includes giving the same errors if [_func] isn't callable or
+  /// if it expects different parameters.
+  ///
+  /// Example:
+  /// ```dart
+  /// List<Movie> fetchMovies(
+  ///    String movieName, {
+  ///    bool adult = false,
+  ///  }) async {
+  ///    final data = api.getData(query);
+  ///    doSomethingWithTheData(data);
+  ///  }
+  ///
+  /// final debouncedFetchMovies = Debounce(
+  ///    fetchMovies,
+  ///   const Duration(milliseconds: 350),
+  /// );
+  ///
+  /// debouncedFetchMovies(['tenet'], {#adult: true});
+  /// ```
+  ///
+  /// gives exactly the same result as
+  /// ```
+  /// fetchMovies('tenet', adult: true).
+  /// ```
   Object? call([List<Object>? args, Map<Symbol, Object>? namedArgs]) {
     final time = DateTime.now().millisecondsSinceEpoch;
     final isInvoking = _shouldInvoke(time);

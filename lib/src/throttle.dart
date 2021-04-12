@@ -74,8 +74,37 @@ class Throttle {
   /// True if there are functions remaining to get invoked.
   bool get isPending => _debounce.isPending;
 
-  /// Calls/invokes this class like a function.
-  /// Pass [args] and [namedArgs] to be used while invoking `func`.
+  /// Dynamically call this [Throttle] with the specified arguments.
+  ///
+  /// Acts the same as calling [func] with positional arguments
+  /// corresponding to the elements of [args] and
+  /// named arguments corresponding to the elements of [namedArgs].
+  ///
+  /// This includes giving the same errors if [func] isn't callable or
+  /// if it expects different parameters.
+  ///
+  /// Example:
+  /// ```dart
+  /// List<Movie> fetchMovies(
+  ///    String movieName, {
+  ///    bool adult = false,
+  ///  }) async {
+  ///    final data = api.getData(query);
+  ///    doSomethingWithTheData(data);
+  ///  }
+  ///
+  /// final throttledFetchMovies = Throttle(
+  ///    fetchMovies,
+  ///   const Duration(milliseconds: 350),
+  /// );
+  ///
+  /// throttledFetchMovies(['tenet'], {#adult: true});
+  /// ```
+  ///
+  /// gives exactly the same result as
+  /// ```
+  /// fetchMovies('tenet', adult: true).
+  /// ```
   Object? call([List<Object>? args, Map<Symbol, Object>? namedArgs]) =>
       _debounce.call(args, namedArgs);
 }
