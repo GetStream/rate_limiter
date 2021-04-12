@@ -15,7 +15,7 @@ _Rate limiting_ is a strategy for limiting an action. It puts a cap on how often
 - [Strategies](#strategies)
 	- [Debounce](#debounce)
 	- [Throttle](#throttle)
-- [IsPending](#is-pending)
+- [Pending](#pending)
 - [Flush](#flush)
 - [Cancellation](#cancellation)
     
@@ -118,7 +118,7 @@ RaisedButton(
 );
 ```
 
-### IsPending
+### Pending
 Used to check if the there are functions still remaining to get invoked.
 ```dart
 final pending = debouncedFunction.isPending;
