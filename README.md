@@ -1,4 +1,7 @@
+
 # Rate Limiter
+
+<img src="https://user-images.githubusercontent.com/25670178/114412456-bc502480-9bca-11eb-8b7c-db69fa389a59.png?sanitize=true">
 
 [![Open Source Love](https://badges.frapsoft.com/os/v1/open-source.svg?v=102)](https://opensource.org/licenses/MIT) [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/GetStream/rate_limit/blob/master/LICENSE) [![CodeCov](https://codecov.io/gh/GetStream/rate_limiter/branch/master/graph/badge.svg)](https://codecov.io/gh/GetStream/rate_limiter) [![Version](https://img.shields.io/pub/v/rate_limiter.svg)](https://pub.dartlang.org/packages/rate_limiter)
 
@@ -17,7 +20,7 @@ _Rate limiting_ is a strategy for limiting an action. It puts a cap on how often
 - [Cancellation](#cancellation)
     
 ## Installation
-Add the following to you  `pubspec.yaml`  and replace  `[version]`  with the latest version:
+Add the following to your  `pubspec.yaml`  and replace  `[version]`  with the latest version:
 ```yaml
 dependencies:
   rate_limiter: ^[version]
@@ -123,7 +126,7 @@ final pending = throttledFunction.isPending;
 ```
 
 ### Flush
-Used to immediately invokes all the remaining delayed functions.
+Used to immediately invoke all the remaining delayed functions.
 ```dart
 final result = debouncedFunction.flush();
 final result = throttledFunction.flush();
