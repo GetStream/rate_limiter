@@ -21,3 +21,7 @@ jobs:
         with:
           min_coverage: 97
           path: "./coverage/lcov.info"
+      - name: Report CodeCov
+        uses: codecov/codecov-action@v1.0.0
+        with:
+          file: coverage/lcov.info
