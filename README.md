@@ -64,7 +64,7 @@ final debouncedAutocompleteSearch = debounce(
     // updates suggestion list
     updateSearchSuggestions(results);
   },
-  const Duration(milliseconds: 350),
+  const Duration(seconds: 1),
 );
 
 TextField(
