@@ -9,8 +9,8 @@ void main() {
     print(count);
   }
 
-  // regularFunction get's executed 1000000 times
-  for (var i = 0; i < 1000000; i++) {
+  // regularFunction get's executed 10000 times
+  for (var i = 0; i < 10000; i++) {
     regularFunction();
   }
 
@@ -20,9 +20,9 @@ void main() {
     const Duration(milliseconds: 100),
   );
 
-  // debouncedFunction get's executed only once even though invoked
+  // debouncedFunction prints only once even though invoked
   // 1000000 times
-  for (var i = 0; i < 1000000; i++) {
+  for (var i = 0; i < 10000; i++) {
     debouncedFunction();
   }
 
@@ -31,9 +31,9 @@ void main() {
     const Duration(milliseconds: 100),
   );
 
-  // throttledFunction get's executed ~3 times even though invoked
-  // 1000000 times
-  for (var i = 0; i < 1000000; i++) {
+  // throttledFunction prints ~3 times even though invoked
+  // 10000 times
+  for (var i = 0; i < 10000; i++) {
     throttledFunction();
   }
 }
