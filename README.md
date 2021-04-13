@@ -10,6 +10,8 @@
 ## Introduction
 _Rate limiting_ is a strategy for limiting an action. It puts a cap on how often someone can repeat an action within a certain timeframe. Using `rate_limiter` we made it easier than ever to apply these strategies on regular dart functions.
 
+( Inspired from [lodash](https://lodash.com/) )
+
 ## Index
 - [Installation](#installation)
 - [Strategies](#strategies)
@@ -62,7 +64,7 @@ final debouncedAutocompleteSearch = debounce(
     // updates suggestion list
     updateSearchSuggestions(results);
   },
-  const Duration(milliseconds: 350),
+  const Duration(seconds: 1),
 );
 
 TextField(
