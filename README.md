@@ -17,6 +17,7 @@ _Rate limiting_ is a strategy for limiting an action. It puts a cap on how often
 - [Strategies](#strategies)
 	- [Debounce](#debounce)
 	- [Throttle](#throttle)
+    - [BackOff](#backoff)
 - [Pending](#pending)
 - [Flush](#flush)
 - [Cancellation](#cancellation)
@@ -74,8 +75,6 @@ TextField(
 );
 ```
 
-
-
 ### Throttle
 To _throttle_ a function means to ensure that the function is called at most once in a specified time period (for instance, once every 10 seconds). This means throttling will prevent a function from running if it has run “recently”. Throttling also ensures a function is run regularly at a fixed rate.
 
@@ -117,6 +116,53 @@ RaisedButton(
     throttledPerformPunch();
   }
   child: Text('Punch')
+);
+```
+
+### BackOff
+BackOff is a strategy that allows you to retry a function call multiple times with a delay between each call. It is useful when you want to retry a function call multiple times in case of failure.
+
+#### Usage
+Creating backoff function is similar to debounce and throttle function.
+
+1. Creating from scratch
+```dart
+final response = backOff(
+  // Make a GET request
+  () => http.get('https://google.com').timeout(Duration(seconds: 5)),
+  maxAttempts: 5,
+  maxDelay: Duration(seconds: 5),
+  // Retry on SocketException or TimeoutException
+  retryIf: (e, _) => e is SocketException || e is TimeoutException,
+);
+```
+2. Converting an existing function into backoff function
+```dart
+Future<String> regularFunction() async {  
+  // Make a GET request
+  final response = await http.get('https://google.com').timeout(Duration(seconds: 5));
+  return response.body;
+}
+
+final response = regularFunction.backOff(
+  maxAttempts: 5,
+  maxDelay: Duration(seconds: 5),
+  // Retry on SocketException or TimeoutException
+  retryIf: (e, _) => e is SocketException || e is TimeoutException,
+);
+```
+
+#### Example
+While making a network request, it is possible that the request fails due to network issues. In such cases, it is useful to retry the request multiple times with a delay between each call. This is where backoff strategy comes in handy.
+
+```dart
+final response = backOff(
+  // Make a GET request
+  () => http.get('https://google.com').timeout(Duration(seconds: 5)),
+  maxAttempts: 5,
+  maxDelay: Duration(seconds: 5),
+  // Retry on SocketException or TimeoutException
+  retryIf: (e, _) => e is SocketException || e is TimeoutException,
 );
 ```
 
