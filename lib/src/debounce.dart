@@ -85,8 +85,8 @@ class Debounce {
   int _lastInvokeTime = 0;
 
   Object? _invokeFunc(int time) {
-    final args = _lastArgs as List<Object>?;
-    final namedArgs = _lastNamedArgs as Map<Symbol, Object>?;
+    final args = _lastArgs as List<Object?>?;
+    final namedArgs = _lastNamedArgs as Map<Symbol, Object?>?;
     _lastInvokeTime = time;
     _lastArgs = _lastNamedArgs = _undefined;
     return _result = Function.apply(_func, args, namedArgs);
@@ -200,7 +200,7 @@ class Debounce {
   /// ```
   /// fetchMovies('tenet', adult: true).
   /// ```
-  Object? call([List<Object>? args, Map<Symbol, Object>? namedArgs]) {
+  Object? call([List<Object?>? args, Map<Symbol, Object?>? namedArgs]) {
     final time = DateTime.now().millisecondsSinceEpoch;
     final isInvoking = _shouldInvoke(time);
 
