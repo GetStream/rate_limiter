@@ -79,6 +79,30 @@ void main() {
       });
     });
 
+    test('should not stay pending after a flush', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final throttled = throttle((String value) {
+          ++callCount;
+          return value;
+        }, 32.toDuration(), leading: false);
+
+        throttled(['a']);
+        async.elapse(10.toDuration());
+        throttled(['b']);
+
+        expect(throttled.flush(), 'b');
+        expect(throttled.isPending, false);
+
+        for (var elapsed = 0; elapsed < 256; elapsed++) {
+          async.elapse(1.toDuration());
+          expect(throttled.isPending, false, reason: 'at ${elapsed + 1}ms');
+        }
+        expect(callCount, 1);
+      });
+    });
+
     test('should return if there are functions remaining to get invoked', () {
       fakeAsync((async) {
         final throttled = throttle(identity, 32.toDuration());

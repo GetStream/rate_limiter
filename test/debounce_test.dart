@@ -99,6 +99,33 @@ void main() {
       });
     });
 
+    test('should not stay pending after a flush', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce((String value) {
+          ++callCount;
+          return value;
+        }, 32.toDuration());
+
+        debounced(['a']);
+        async.elapse(10.toDuration());
+        debounced(['b']);
+
+        expect(debounced.flush(), 'b');
+        expect(debounced.isPending, false);
+
+        // The flushed timer must be gone, not merely detached. Left armed it
+        // fires, finds nothing to invoke and reschedules, so `isPending` flips
+        // back to `true` partway through this window.
+        for (var elapsed = 0; elapsed < 256; elapsed++) {
+          async.elapse(1.toDuration());
+          expect(debounced.isPending, false, reason: 'at ${elapsed + 1}ms');
+        }
+        expect(callCount, 1);
+      });
+    });
+
     test('should return if there are functions remaining to get invoked', () {
       fakeAsync((async) {
         final debounced = debounce(identity, 32.toDuration());
