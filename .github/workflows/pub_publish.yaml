@@ -1,0 +1,36 @@
+name: pub_publish
+
+on:
+  push:
+    tags:
+      # This repository tags releases without a `v` prefix (`1.0.0`), but accept
+      # the prefixed form too so a tag in either style still publishes.
+      - "[0-9]+.[0-9]+.[0-9]+*"
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    permissions:
+      contents: read
+      id-token: write # Required for authentication using OIDC
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🌵 Dry Run
+        run: dart pub publish --dry-run
+
+      - name: 📢 Publish
+        run: dart pub publish --force
