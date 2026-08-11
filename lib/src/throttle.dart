@@ -55,19 +55,24 @@ class Throttle {
     Duration wait, {
     bool leading = true,
     bool trailing = true,
-    WaitBuilder? waitBuilder,
   }) : _debounce = Debounce(
           func,
           wait,
           leading: leading,
           trailing: trailing,
           // `maxWait` is always raised to at least `wait`, so zero pins it to
-          // whatever `wait` currently is — including after `waitBuilder` runs.
-          maxWait: waitBuilder == null ? wait : Duration.zero,
-          waitBuilder: waitBuilder,
+          // whatever `wait` currently is, including after it is reassigned.
+          maxWait: Duration.zero,
         );
 
   final Debounce _debounce;
+
+  /// How long a call waits before `func` is invoked.
+  ///
+  /// Assigning a new value takes effect from the next call.
+  Duration get wait => _debounce.wait;
+
+  set wait(Duration value) => _debounce.wait = value;
 
   /// Cancels all the remaining delayed functions.
   void cancel() => _debounce.cancel();

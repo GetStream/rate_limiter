@@ -267,21 +267,21 @@ void main() {
     });
   });
 
-  group('throttle waitBuilder', () {
-    test('should throttle at the interval the builder returns', () {
+  group('throttle wait', () {
+    test('should throttle at the wait assigned before the call', () {
       fakeAsync((async) {
         var callCount = 0;
 
-        final throttled = throttle(
-          (int wait) => ++callCount,
-          100.toDuration(),
-          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
-        );
+        final throttled = throttle(() => ++callCount, 100.toDuration());
+        expect(throttled.wait, 100.toDuration());
 
-        throttled([300]);
+        throttled.wait = 300.toDuration();
+        expect(throttled.wait, 300.toDuration());
+
+        throttled();
         expect(callCount, 1);
 
-        throttled([300]);
+        throttled();
         async.elapse(299.toDuration());
         expect(callCount, 1);
 
@@ -290,22 +290,19 @@ void main() {
       });
     });
 
-    test('should keep maxWait pinned to the built wait', () {
+    test('should keep maxWait pinned to the current wait', () {
       fakeAsync((async) {
         var callCount = 0;
 
-        final throttled = throttle(
-          (int wait) => ++callCount,
-          100.toDuration(),
-          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
-        );
+        final throttled = throttle(() => ++callCount, 100.toDuration());
 
-        throttled([100]);
+        throttled();
+        throttled.wait = 50.toDuration();
 
         // A tight loop can only be broken by maxWait. Were maxWait left at the
         // 100ms the throttle was built with, this would invoke half as often.
         for (var elapsed = 0; elapsed < 200; elapsed++) {
-          throttled([50]);
+          throttled();
           async.elapseBlocking(1.toDuration());
         }
 

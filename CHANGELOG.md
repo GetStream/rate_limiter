@@ -1,8 +1,8 @@
 ## [1.2.0] - (11-08-2026)
 
-* Added `waitBuilder` to `Debounce` and `Throttle`, deriving the wait from the
-  arguments a call was made with, so a single instance can vary its delay
-  instead of needing one instance per delay.
+* `Debounce.wait` and `Throttle.wait` are now readable and assignable. Setting
+  a new value takes effect from the next call, so one instance can vary its
+  delay instead of needing one instance per delay.
 
 ## [1.1.0] - (11-08-2026)
 
