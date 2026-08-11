@@ -1,39 +1,66 @@
-name: Dart CI
+name: rate_limiter
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
   build:
+    strategy:
+      matrix:
+        sdk:
+          # The first entry is the minimum Dart SDK version supported by the
+          # package, refer to the `environment` constraint in pubspec.yaml.
+          - "3.4.0"
+          - "stable"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
-      - name: Install Dependencies
+          sdk: ${{ matrix.sdk }}
+
+      - name: 📦 Install Dependencies
         run: dart pub get
-      - name: Format
-        run: dart format --output=none --set-exit-if-changed .
-      - name: Analyze
-        run: dart analyze --fatal-infos
-      - name: Run tests
-        run: dart test --coverage=coverage
+
+      - name: ✨ Check Formatting
+        run: dart format --set-exit-if-changed lib
+
+      - name: 🕵️ Analyze
+        run: dart analyze lib
+
+      - name: 🧪 Run Tests
+        run: dart test --coverage=coverage --test-randomize-ordering-seed random
+
       # `--base-directory` keeps the paths in lcov.info repo-relative, otherwise
       # Codecov cannot map them back to the files in the repo.
-      - name: Format coverage
+      - name: 📊 Format Coverage
         run: >
           dart run coverage:format_coverage --lcov --in=coverage
           --out=coverage/lcov.info --report-on=lib --base-directory=.
-      - name: Check Code Coverage
+
+      - name: 🧾 Check Code Coverage
         uses: VeryGoodOpenSource/very_good_coverage@v3
         with:
           min_coverage: 97
-          path: "./coverage/lcov.info"
-      - name: Report CodeCov
-        uses: codecov/codecov-action@v4
+          path: coverage/lcov.info
+
+      - name: 📁 Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/lcov.info
