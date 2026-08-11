@@ -3,9 +3,11 @@ name: pub_publish
 on:
   push:
     tags:
-      # This repository tags releases without a `v` prefix (`1.0.0`), but accept
-      # the prefixed form too so a tag in either style still publishes.
-      - "[0-9]+.[0-9]+.[0-9]+*"
+      # Must stay in sync with the tag pattern configured for automated
+      # publishing on pub.dev — it is matched against the OIDC token, so a tag
+      # this pattern accepts but pub.dev does not would fail at the publish
+      # step. Releases up to 1.0.0 were tagged without the `v` prefix; from
+      # here on they need it.
       - "v[0-9]+.[0-9]+.[0-9]+*"
 
 permissions:
