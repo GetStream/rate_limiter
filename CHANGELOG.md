@@ -1,3 +1,8 @@
+## Unreleased
+
+* Read the current time through `package:clock` instead of `DateTime.now()`, so
+  `Debounce` and `Throttle` can be tested deterministically with `fakeAsync`.
+
 ## [1.0.0] - (14-12-2022)
 
 * Added BackOff.
