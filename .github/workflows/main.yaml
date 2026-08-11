@@ -44,10 +44,31 @@ jobs:
         run: dart analyze lib
 
       - name: 🧪 Run Tests
-        run: dart test --coverage=coverage --test-randomize-ordering-seed random
+        run: dart test --test-randomize-ordering-seed random
 
-      # `--base-directory` keeps the paths in lcov.info repo-relative, otherwise
-      # Codecov cannot map them back to the files in the repo.
+  # Coverage only needs measuring once, so it gets its own job rather than
+  # running in every leg of the matrix above.
+  coverage:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🧪 Collect Coverage
+        run: dart test --coverage=coverage
+
+      # `test_with_coverage` would do this in one step, but it has no
+      # `--base-directory`, and Codecov can only map files when the paths in
+      # lcov.info are relative to the repository root.
       - name: 📊 Format Coverage
         run: >
           dart run coverage:format_coverage --lcov --in=coverage
