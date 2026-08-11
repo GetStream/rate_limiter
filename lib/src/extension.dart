@@ -32,6 +32,7 @@ extension RateLimit on Function {
     bool leading = false,
     bool trailing = true,
     Duration? maxWait,
+    WaitBuilder? waitBuilder,
   }) =>
       Debounce(
         this,
@@ -39,6 +40,7 @@ extension RateLimit on Function {
         leading: leading,
         trailing: trailing,
         maxWait: maxWait,
+        waitBuilder: waitBuilder,
       );
 
   /// Converts this into a [Throttle] function.
@@ -46,12 +48,14 @@ extension RateLimit on Function {
     Duration wait, {
     bool leading = true,
     bool trailing = true,
+    WaitBuilder? waitBuilder,
   }) =>
       Throttle(
         this,
         wait,
         leading: leading,
         trailing: trailing,
+        waitBuilder: waitBuilder,
       );
 }
 
@@ -80,6 +84,7 @@ Debounce debounce(
   bool leading = false,
   bool trailing = true,
   Duration? maxWait,
+  WaitBuilder? waitBuilder,
 }) =>
     Debounce(
       func,
@@ -87,6 +92,7 @@ Debounce debounce(
       leading: leading,
       trailing: trailing,
       maxWait: maxWait,
+      waitBuilder: waitBuilder,
     );
 
 /// TopLevel lambda to create [Throttle] functions.
@@ -95,10 +101,12 @@ Throttle throttle(
   Duration wait, {
   bool leading = true,
   bool trailing = true,
+  WaitBuilder? waitBuilder,
 }) =>
     Throttle(
       func,
       wait,
       leading: leading,
       trailing: trailing,
+      waitBuilder: waitBuilder,
     );

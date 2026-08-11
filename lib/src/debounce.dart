@@ -5,6 +5,16 @@ import 'package:clock/clock.dart';
 
 const _undefined = Object();
 
+/// Computes the `wait` to use for a call, from the arguments that call was
+/// made with.
+///
+/// Both parameters are the ones passed to [Debounce.call], so they are `null`
+/// when the debounced function takes no arguments.
+typedef WaitBuilder = Duration Function(
+  List<Object?>? args,
+  Map<Symbol, Object?>? namedArgs,
+);
+
 /// Creates a debounced function that delays invoking `func` until after `wait`
 /// milliseconds have elapsed since the last time the debounced function was
 /// invoked. The debounced function comes with a [Debounce.cancel] method to cancel
@@ -55,6 +65,19 @@ const _undefined = Object();
 /// ```dart
 ///   final status = debounced.isPending ? "Pending..." : "Ready";
 /// ```
+///
+/// Vary the wait per call with `waitBuilder`, here searching sooner once the
+/// query is long enough to be worth sending.
+/// ```dart
+///   final debouncedSearch = Debounce(
+///     search,
+///     const Duration(milliseconds: 300),
+///     waitBuilder: (args, namedArgs) {
+///       final query = args!.first! as String;
+///       return Duration(milliseconds: query.length <= 2 ? 500 : 300);
+///     },
+///   );
+/// ```
 class Debounce {
   /// Creates a new instance of [Debounce].
   Debounce(
@@ -63,21 +86,26 @@ class Debounce {
     bool leading = false,
     bool trailing = true,
     Duration? maxWait,
+    WaitBuilder? waitBuilder,
   })  : _leading = leading,
         _trailing = trailing,
+        _waitBuilder = waitBuilder,
         _wait = wait.inMilliseconds,
+        _maxWaitInput = maxWait?.inMilliseconds,
         _maxing = maxWait != null {
     if (_maxing) {
-      _maxWait = math.max(maxWait!.inMilliseconds, _wait);
+      _maxWait = math.max(_maxWaitInput!, _wait);
     }
   }
 
   final Function _func;
   final bool _leading;
   final bool _trailing;
-  final int _wait;
   final bool _maxing;
+  final WaitBuilder? _waitBuilder;
+  final int? _maxWaitInput;
 
+  int _wait;
   int? _maxWait;
   Object? _lastArgs = _undefined;
   Object? _lastNamedArgs = _undefined;
@@ -96,6 +124,21 @@ class Debounce {
 
   Timer _startTimer(Function pendingFunc, int wait) =>
       Timer(Duration(milliseconds: wait), () => pendingFunc());
+
+  // Returns true if the wait changed, meaning a pending timer is now armed for
+  // the wrong duration.
+  bool _resolveWait(List<Object?>? args, Map<Symbol, Object?>? namedArgs) {
+    final builder = _waitBuilder;
+    if (builder == null) return false;
+
+    final resolved = builder(args, namedArgs).inMilliseconds;
+    assert(resolved >= 0, 'waitBuilder must not return a negative Duration');
+    if (resolved == _wait) return false;
+
+    _wait = resolved;
+    if (_maxing) _maxWait = math.max(_maxWaitInput!, _wait);
+    return true;
+  }
 
   bool _shouldInvoke(int time) {
     // This is our first call.
@@ -206,6 +249,7 @@ class Debounce {
   /// fetchMovies('tenet', adult: true).
   /// ```
   Object? call([List<Object?>? args, Map<Symbol, Object?>? namedArgs]) {
+    final waitChanged = _resolveWait(args, namedArgs);
     final time = clock.now().millisecondsSinceEpoch;
     final isInvoking = _shouldInvoke(time);
 
@@ -223,7 +267,15 @@ class Debounce {
         return _invokeFunc(_lastCallTime!);
       }
     }
-    _timer ??= _startTimer(_timerExpired, _wait);
+
+    if (_timer == null) {
+      _timer = _startTimer(_timerExpired, _wait);
+    } else if (waitChanged) {
+      // The pending timer is still counting down the previous wait, so it would
+      // fire late when the wait shrinks. Re-arm it against the new one.
+      _timer!.cancel();
+      _timer = _startTimer(_timerExpired, _remainingWait(time));
+    }
     return _result;
   }
 }

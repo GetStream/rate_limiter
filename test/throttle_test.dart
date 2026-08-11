@@ -266,4 +266,51 @@ void main() {
       });
     });
   });
+
+  group('throttle waitBuilder', () {
+    test('should throttle at the interval the builder returns', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final throttled = throttle(
+          (int wait) => ++callCount,
+          100.toDuration(),
+          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
+        );
+
+        throttled([300]);
+        expect(callCount, 1);
+
+        throttled([300]);
+        async.elapse(299.toDuration());
+        expect(callCount, 1);
+
+        async.elapse(1.toDuration());
+        expect(callCount, 2);
+      });
+    });
+
+    test('should keep maxWait pinned to the built wait', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final throttled = throttle(
+          (int wait) => ++callCount,
+          100.toDuration(),
+          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
+        );
+
+        throttled([100]);
+
+        // A tight loop can only be broken by maxWait. Were maxWait left at the
+        // 100ms the throttle was built with, this would invoke half as often.
+        for (var elapsed = 0; elapsed < 200; elapsed++) {
+          throttled([50]);
+          async.elapseBlocking(1.toDuration());
+        }
+
+        expect(callCount, greaterThan(2));
+      });
+    });
+  });
 }

@@ -55,12 +55,16 @@ class Throttle {
     Duration wait, {
     bool leading = true,
     bool trailing = true,
+    WaitBuilder? waitBuilder,
   }) : _debounce = Debounce(
           func,
           wait,
           leading: leading,
           trailing: trailing,
-          maxWait: wait,
+          // `maxWait` is always raised to at least `wait`, so zero pins it to
+          // whatever `wait` currently is — including after `waitBuilder` runs.
+          maxWait: waitBuilder == null ? wait : Duration.zero,
+          waitBuilder: waitBuilder,
         );
 
   final Debounce _debounce;

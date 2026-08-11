@@ -370,4 +370,113 @@ void main() {
       });
     });
   });
+
+  group('debounce waitBuilder', () {
+    test('should wait for the duration the builder returns', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          (String query) => ++callCount,
+          100.toDuration(),
+          waitBuilder: (args, _) {
+            final query = args!.first! as String;
+            return query.length <= 2 ? 500.toDuration() : 100.toDuration();
+          },
+        );
+
+        debounced(['te']);
+        async.elapse(499.toDuration());
+        expect(callCount, 0);
+
+        async.elapse(1.toDuration());
+        expect(callCount, 1);
+      });
+    });
+
+    test('should re-arm a pending timer when the wait shrinks', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          (int wait) => ++callCount,
+          500.toDuration(),
+          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
+        );
+
+        debounced([500]);
+        async.elapse(100.toDuration());
+        debounced([200]);
+
+        // Due 200ms after the second call, not 500ms after the first.
+        async.elapse(199.toDuration());
+        expect(callCount, 0);
+
+        async.elapse(1.toDuration());
+        expect(callCount, 1);
+      });
+    });
+
+    test('should re-arm a pending timer when the wait grows', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          (int wait) => ++callCount,
+          100.toDuration(),
+          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
+        );
+
+        debounced([100]);
+        async.elapse(50.toDuration());
+        debounced([300]);
+
+        async.elapse(299.toDuration());
+        expect(callCount, 0);
+
+        async.elapse(1.toDuration());
+        expect(callCount, 1);
+      });
+    });
+
+    test('should pass named arguments to the builder', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          ({required int ms}) => ++callCount,
+          100.toDuration(),
+          waitBuilder: (_, namedArgs) => (namedArgs![#ms]! as int).toDuration(),
+        );
+
+        debounced(null, {#ms: 250});
+        async.elapse(249.toDuration());
+        expect(callCount, 0);
+
+        async.elapse(1.toDuration());
+        expect(callCount, 1);
+      });
+    });
+
+    test('should keep honouring maxWait', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          (int wait) => ++callCount,
+          50.toDuration(),
+          maxWait: 200.toDuration(),
+          waitBuilder: (args, _) => (args!.first! as int).toDuration(),
+        );
+
+        // Each call pushes the wait out, so only maxWait can fire it.
+        for (var elapsed = 0; elapsed < 400; elapsed += 40) {
+          debounced([300]);
+          async.elapse(40.toDuration());
+        }
+
+        expect(callCount, greaterThan(0));
+      });
+    });
+  });
 }

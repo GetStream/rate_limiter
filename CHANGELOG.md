@@ -1,3 +1,9 @@
+## [1.2.0] - (11-08-2026)
+
+* Added `waitBuilder` to `Debounce` and `Throttle`, deriving the wait from the
+  arguments a call was made with, so a single instance can vary its delay
+  instead of needing one instance per delay.
+
 ## [1.1.0] - (11-08-2026)
 
 * Read the current time through `package:clock` instead of `DateTime.now()`, so
