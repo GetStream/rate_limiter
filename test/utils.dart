@@ -4,6 +4,4 @@ T identity<T>(T value) => value;
 // Extension function to convert int into durations
 extension IntX on int {
   Duration toDuration() => Duration(milliseconds: this);
-
-  bool toBool() => this == 0 ? false : true;
 }

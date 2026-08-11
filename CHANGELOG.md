@@ -1,4 +1,4 @@
-## [1.1.0]
+## [1.1.0] - (11-08-2026)
 
 * Read the current time through `package:clock` instead of `DateTime.now()`, so
   `Debounce` and `Throttle` can be tested deterministically with `fakeAsync`.
