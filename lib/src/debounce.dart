@@ -113,9 +113,8 @@ class Debounce {
   }
 
   Object? _trailingEdge(int time) {
-    // `flush` reaches here with the timer still armed. Left running it would
-    // fire later, find nothing to invoke, and reschedule itself, which makes
-    // `isPending` report `true` again after a flush.
+    // `flush` reaches here with the timer still armed; left running it would
+    // reschedule itself and make `isPending` true again.
     _timer?.cancel();
     _timer = null;
 

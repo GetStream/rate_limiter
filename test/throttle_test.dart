@@ -4,9 +4,6 @@ import 'package:test/test.dart';
 
 import 'utils.dart';
 
-// `Throttle` delegates to `Debounce`, so like the debounce suite these run
-// against a clock `fakeAsync` controls rather than real elapsed time. See
-// `debounce_test.dart` for the difference between `elapse` and `elapseBlocking`.
 void main() {
   group('throttle', () {
     test('should throttle a function', () {
@@ -20,11 +17,9 @@ void main() {
         throttled();
         throttled();
 
-        // The leading edge fires immediately, the other two are collapsed.
         expect(callCount, 1);
 
         async.elapse(64.toDuration());
-        // ...and the collapsed calls produce a single trailing invocation.
         expect(callCount, 2);
       });
     });
@@ -51,8 +46,7 @@ void main() {
         expect(results, [null, null, null]);
         expect(callCount, 0);
 
-        // Past the point the trailing call would have fired, to prove `cancel`
-        // actually dropped it rather than the test finishing first.
+        // Past the trailing call's deadline, so `cancel` is what stopped it.
         async.elapse(128.toDuration());
         expect(callCount, 0);
         expect(throttled.isPending, false);
@@ -133,7 +127,6 @@ void main() {
           throttled(['d'])
         ];
 
-        // A new leading edge, so `'c'` is invoked and `'d'` collapses into it.
         expect(results, ['c', 'c']);
       });
     });
@@ -166,8 +159,7 @@ void main() {
           async.elapseBlocking(1.toDuration());
         }
 
-        // A tight loop starves the timers, so every invocation past the leading
-        // edge has to come from `maxWait`, which `Throttle` sets to `wait`.
+        // Past the leading edge, only `maxWait` can invoke inside a tight loop.
         expect(callCount, greaterThan(1));
       });
     });
@@ -247,7 +239,6 @@ void main() {
         expect(withoutTrailing(['b']), 'a');
 
         async.elapse(256.toDuration());
-        // The trailing-enabled one picks up the collapsed `'b'` call.
         expect(withCount, 2);
         expect(withoutCount, 1);
       });

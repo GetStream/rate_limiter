@@ -4,13 +4,8 @@ import 'package:test/test.dart';
 
 import 'utils.dart';
 
-// `Debounce` reads the time through `package:clock` and schedules its work with
-// `Timer`, both of which `fakeAsync` controls. Every test below therefore runs
-// against a clock it moves itself, rather than waiting on real time.
-//
-// `elapse` advances the clock and runs any timer that comes due along the way.
-// `elapseBlocking` advances it *without* running timers, which is what a
-// synchronous tight loop does to a real program.
+// `elapse` advances the clock and runs timers as they come due;
+// `elapseBlocking` advances it without running them, as a tight loop would.
 void main() {
   group('debounce', () {
     test('should debounce a function', () {
@@ -40,7 +35,6 @@ void main() {
           debounced(['f'])
         ];
 
-        // Each call returns the result of the last invocation, `'c'`.
         expect(results, ['c', 'c', 'c']);
         expect(callCount, 1);
 
@@ -71,8 +65,7 @@ void main() {
         expect(results, [null, null, null]);
         expect(callCount, 0);
 
-        // Past the point the trailing call would have fired, to prove `cancel`
-        // actually dropped it rather than the test finishing first.
+        // Past the trailing call's deadline, so `cancel` is what stopped it.
         async.elapse(128.toDuration());
         expect(callCount, 0);
         expect(debounced.isPending, false);
@@ -115,9 +108,7 @@ void main() {
         expect(debounced.flush(), 'b');
         expect(debounced.isPending, false);
 
-        // The flushed timer must be gone, not merely detached. Left armed it
-        // fires, finds nothing to invoke and reschedules, so `isPending` flips
-        // back to `true` partway through this window.
+        // A detached-but-armed timer reschedules itself partway through here.
         for (var elapsed = 0; elapsed < 256; elapsed++) {
           async.elapse(1.toDuration());
           expect(debounced.isPending, false, reason: 'at ${elapsed + 1}ms');
@@ -146,8 +137,6 @@ void main() {
         debounced(['a']);
 
         async.elapse(64.toDuration());
-        // The trailing call invoked `func` with `'a'`, so that is the result
-        // this call reports back — not its own argument.
         expect(debounced(['b']), 'a');
 
         async.elapse(128.toDuration());
@@ -166,7 +155,6 @@ void main() {
         debounced();
         expect(callCount, 0);
 
-        // Deferred to the next tick rather than run inline.
         async.elapse(Duration.zero);
         expect(callCount, 1);
       });
@@ -207,7 +195,6 @@ void main() {
         expect(callCounts[1], 1);
 
         async.elapse(64.toDuration());
-        // Only the trailing-enabled one fires a second time.
         expect(callCounts, [1, 2]);
 
         withLeading();
@@ -303,8 +290,7 @@ void main() {
           withoutCount++;
         }, 96.toDuration());
 
-        // A tight loop starves the event loop, so time passes but no timer gets
-        // a chance to run. Only `maxWait` can break out of that.
+        // No timer can run in a tight loop, so only `maxWait` breaks out.
         for (var elapsed = 0; elapsed < limit; elapsed++) {
           withMaxWait();
           withoutMaxWait();
@@ -314,8 +300,6 @@ void main() {
         expect(withoutCount, 0);
         expect(withCount, greaterThan(0));
 
-        // Letting timers run again finds the last call still inside its `wait`,
-        // so the pending timer reschedules itself for the remainder.
         async.elapse(1.toDuration());
         expect(withoutCount, 0);
       });
@@ -375,8 +359,7 @@ void main() {
           return ++callCount != 2;
         }, 32.toDuration(), leading: true, maxWait: 64.toDuration());
 
-        // Call in a tight loop until the second invocation happens, which is
-        // the one `maxWait` forces while the trailing timer is still armed.
+        // The second invocation is the one `maxWait` forces mid-loop.
         while (debounced([object, 'a']) as bool) {
           async.elapseBlocking(1.toDuration());
         }

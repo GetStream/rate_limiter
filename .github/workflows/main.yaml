@@ -20,8 +20,7 @@ jobs:
     strategy:
       matrix:
         sdk:
-          # The first entry is the minimum Dart SDK version supported by the
-          # package, refer to the `environment` constraint in pubspec.yaml.
+          # Keep the first entry in sync with `environment` in pubspec.yaml.
           - "3.4.0"
           - "stable"
     runs-on: ubuntu-latest
@@ -46,8 +45,6 @@ jobs:
       - name: 🧪 Run Tests
         run: dart test --test-randomize-ordering-seed random
 
-  # Coverage only needs measuring once, so it gets its own job rather than
-  # running in every leg of the matrix above.
   coverage:
     needs: build
     runs-on: ubuntu-latest
@@ -66,9 +63,8 @@ jobs:
       - name: 🧪 Collect Coverage
         run: dart test --coverage=coverage
 
-      # `test_with_coverage` would do this in one step, but it has no
-      # `--base-directory`, and Codecov can only map files when the paths in
-      # lcov.info are relative to the repository root.
+      # `--base-directory` keeps paths repo-relative, which Codecov needs to map
+      # files. `test_with_coverage` is a single step but cannot do this.
       - name: 📊 Format Coverage
         run: >
           dart run coverage:format_coverage --lcov --in=coverage
