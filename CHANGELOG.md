@@ -1,5 +1,7 @@
-## Unreleased
+## [2.0.0]
 
+* **BREAKING** Bumped the minimum Dart SDK to `^3.4.0`, as required by
+  `package:clock`.
 * Read the current time through `package:clock` instead of `DateTime.now()`, so
   `Debounce` and `Throttle` can be tested deterministically with `fakeAsync`.
 
