@@ -53,6 +53,30 @@ void main() {
         expect(callCount, 2);
       });
     });
+
+    test('should handle invocations in a tight loop', () {
+      fakeAsync((async) {
+        var callCount = 0;
+
+        final debounced = debounce(
+          () => ++callCount,
+          const Duration(milliseconds: 32),
+          maxWait: const Duration(milliseconds: 64),
+        );
+
+        debounced();
+        expect(callCount, 0);
+
+        // `elapseBlocking` moves the clock forward without running the pending
+        // timer, which is what a synchronous tight loop does. The next call
+        // therefore sees `maxWait` exceeded while the timer is still armed, and
+        // has to invoke `func` itself.
+        async.elapseBlocking(const Duration(milliseconds: 128));
+
+        debounced();
+        expect(callCount, 1);
+      });
+    });
   });
 
   group('throttle with a fake clock', () {
