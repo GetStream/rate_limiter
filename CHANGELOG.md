@@ -1,3 +1,12 @@
+## [1.1.0] - (11-08-2026)
+
+* Read the current time through `package:clock` instead of `DateTime.now()`, so
+  `Debounce` and `Throttle` can be tested deterministically with `fakeAsync`.
+* Fixed `Debounce.flush()` and `Throttle.flush()` leaving their timer armed. The
+  orphaned timer rescheduled itself, which made `isPending` report `true` again
+  shortly after a flush.
+* Raised the minimum Dart SDK to `^3.4.0`, as required by `package:clock`.
+
 ## [1.0.0] - (14-12-2022)
 
 * Added BackOff.

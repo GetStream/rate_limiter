@@ -1,6 +1,8 @@
 import 'dart:async' show Timer;
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
+
 const _undefined = Object();
 
 /// Creates a debounced function that delays invoking `func` until after `wait`
@@ -111,6 +113,9 @@ class Debounce {
   }
 
   Object? _trailingEdge(int time) {
+    // `flush` reaches here with the timer still armed; left running it would
+    // reschedule itself and make `isPending` true again.
+    _timer?.cancel();
     _timer = null;
 
     // Only invoke if we have `_lastArgs` or `_lastNamedArgs` which means
@@ -134,7 +139,7 @@ class Debounce {
   }
 
   void _timerExpired() {
-    final time = DateTime.now().millisecondsSinceEpoch;
+    final time = clock.now().millisecondsSinceEpoch;
     if (_shouldInvoke(time)) {
       _trailingEdge(time);
     } else {
@@ -162,7 +167,7 @@ class Debounce {
 
   /// Immediately invokes all the remaining delayed functions.
   Object? flush() {
-    final now = DateTime.now().millisecondsSinceEpoch;
+    final now = clock.now().millisecondsSinceEpoch;
     return _timer == null ? _result : _trailingEdge(now);
   }
 
@@ -201,7 +206,7 @@ class Debounce {
   /// fetchMovies('tenet', adult: true).
   /// ```
   Object? call([List<Object?>? args, Map<Symbol, Object?>? namedArgs]) {
-    final time = DateTime.now().millisecondsSinceEpoch;
+    final time = clock.now().millisecondsSinceEpoch;
     final isInvoking = _shouldInvoke(time);
 
     _lastArgs = args;

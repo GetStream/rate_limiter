@@ -1,0 +1,83 @@
+name: rate_limiter
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        sdk:
+          # Keep the first entry in sync with `environment` in pubspec.yaml.
+          - "3.4.0"
+          - "stable"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: ${{ matrix.sdk }}
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: ✨ Check Formatting
+        run: dart format --set-exit-if-changed lib
+
+      - name: 🕵️ Analyze
+        run: dart analyze lib
+
+      - name: 🧪 Run Tests
+        run: dart test --test-randomize-ordering-seed random
+
+  coverage:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📚 Git Checkout
+        uses: actions/checkout@v7
+
+      - name: 🎯 Setup Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 📦 Install Dependencies
+        run: dart pub get
+
+      - name: 🧪 Collect Coverage
+        run: dart test --coverage=coverage
+
+      # `--base-directory` keeps paths repo-relative, which Codecov needs to map
+      # files. `test_with_coverage` is a single step but cannot do this.
+      - name: 📊 Format Coverage
+        run: >
+          dart run coverage:format_coverage --lcov --in=coverage
+          --out=coverage/lcov.info --report-on=lib --base-directory=.
+
+      - name: 🧾 Check Code Coverage
+        uses: VeryGoodOpenSource/very_good_coverage@v3
+        with:
+          min_coverage: 97
+          path: coverage/lcov.info
+
+      - name: 📁 Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/lcov.info

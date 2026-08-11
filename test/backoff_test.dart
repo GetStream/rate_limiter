@@ -8,7 +8,7 @@ void main() {
       count++;
       return true;
     });
-    expect(f, completion(isTrue));
+    await expectLater(f, completion(isTrue));
     expect(count, equals(1));
   });
 
