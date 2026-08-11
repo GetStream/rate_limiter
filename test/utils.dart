@@ -7,7 +7,3 @@ extension IntX on int {
 
   bool toBool() => this == 0 ? false : true;
 }
-
-// Top level util function to delay the code execution
-Future delay(int milliseconds) =>
-    Future.delayed(Duration(milliseconds: milliseconds));
