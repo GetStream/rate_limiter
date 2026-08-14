@@ -1,6 +1,6 @@
 name: rate_limiter
 description: A pure dart package to apply useful rate limiting strategies on regular functions.
-version: 1.1.0
+version: 1.1.1
 homepage: https://github.com/GetStream/rate_limiter
 repository: https://github.com/GetStream/rate_limiter
 issue_tracker: https://github.com/GetStream/rate_limiter/issues
@@ -9,7 +9,7 @@ environment:
   sdk: ^3.4.0
 
 dependencies:
-  clock: ^1.1.2
+  clock: ^1.1.1
 
 dev_dependencies:
   coverage: ^1.11.0
