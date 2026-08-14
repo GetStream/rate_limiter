@@ -1,3 +1,9 @@
+## [1.1.1] - (14-08-2026)
+
+* Relaxed the `clock` constraint to `^1.1.1` so packages that depend on
+  `flutter_localizations` (which pins `clock` to 1.1.1) can resolve. `1.1.1` and
+  `1.1.2` are identical apart from doc comments.
+
 ## [1.1.0] - (11-08-2026)
 
 * Read the current time through `package:clock` instead of `DateTime.now()`, so
