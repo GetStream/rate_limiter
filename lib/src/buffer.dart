@@ -39,8 +39,10 @@ enum OverflowPolicy {
 /// flush has finished, whichever is later. A batch that came due while a flush
 /// was running does not then serve its wait a second time.
 ///
-/// By default nothing is dropped and no caller is ever slowed down: this is
-/// not a capacity buffer. `maxSize` caps what any one flush carries, and
+/// By default nothing is dropped and no call ever waits on a flush already
+/// running: this is not a capacity buffer. A call that reaches `maxSize` does
+/// hand its batch over itself, so synchronous work in `onFlush` runs before
+/// that call returns. `maxSize` caps what any one flush carries, and
 /// `maxQueueSize` caps the backlog that builds up behind a slow one, shedding
 /// the excess per `overflow`. Where `Debounce` and `Throttle` keep only the
 /// arguments of the last call and discard the rest, a [Buffer] keeps them all.
@@ -130,6 +132,10 @@ class Buffer<T> {
   // served twice over.
   var _isDue = false;
 
+  // Counts every item that has left the buffer, whether it was sent, shed or
+  // discarded, so a drain can tell when the batch it measured has gone.
+  var _removed = 0;
+
   /// The number of items waiting to get flushed.
   ///
   /// Counts what is still held. Items handed to `onFlush` are gone from here
@@ -174,7 +180,7 @@ class Buffer<T> {
     // just arrived, and enrol this caller in sending them.
     if (_items.isEmpty) return _inFlight ?? Future.value();
 
-    return _drain(_items.length);
+    return _drainUntil(_removed + _items.length);
   }
 
   /// Discards the collected items without invoking `onFlush`.
@@ -185,28 +191,28 @@ class Buffer<T> {
     _timer?.cancel();
     _timer = null;
     _isDue = false;
+    _removed += _items.length;
     _items.clear();
   }
 
-  // Hands over [remaining] items, a batch at a time, waiting out anything
-  // already running first.
+  // Hands items over a batch at a time until everything the buffer held when
+  // [target] was measured has left it, waiting out anything already running.
   //
-  // Counted rather than draining until empty, so a caller of `flush` is not
-  // made to send whatever arrives while it waits — under a producer that never
-  // stops, that future would never complete.
-  Future<void> _drain(int remaining) {
-    if (remaining <= 0 || _items.isEmpty) return Future.value();
+  // Measured against what has left rather than against its own batches: a
+  // flush the buffer schedules itself carries part of the same items, and
+  // since that one is started from the completion handler it gets there first.
+  // Counting only its own would leave a drain following a steady producer for
+  // as long as one kept feeding it.
+  Future<void> _drainUntil(int target) {
+    if (_removed >= target) return Future.value();
 
     if (_inFlight case final inFlight?) {
-      return inFlight.then((_) => _drain(remaining));
+      return inFlight.then((_) => _drainUntil(target));
     }
 
-    final sending = switch (_maxSize) {
-      final maxSize? when maxSize < _items.length => maxSize,
-      _ => _items.length,
-    };
+    if (_items.isEmpty) return Future.value();
 
-    return _startFlush(report: false).then((_) => _drain(remaining - sending));
+    return _startFlush(report: false).then((_) => _drainUntil(target));
   }
 
   // Shared by `call` and `addAll` so a bulk add costs one pass, and so a
@@ -315,6 +321,7 @@ class Buffer<T> {
 
   void _dropDownTo(int maxQueueSize) {
     final excess = _items.length - maxQueueSize;
+    _removed += excess;
 
     final dropped = switch (_overflow) {
       OverflowPolicy.dropOldest => List.generate(
@@ -342,6 +349,7 @@ class Buffer<T> {
 
     final take =
         (count == null || count > _items.length) ? _items.length : count;
+    _removed += take;
     return List.generate(take, (_) => _items.removeFirst());
   }
 
@@ -356,11 +364,20 @@ class Buffer<T> {
     try {
       await _invoke(items);
     } catch (error, stackTrace) {
-      if (_onError case final onError?) {
-        onError(error, stackTrace, items);
+      final onError = _onError;
+      if (onError == null) {
+        Zone.current.handleUncaughtError(error, stackTrace);
         return;
       }
-      Zone.current.handleUncaughtError(error, stackTrace);
+
+      try {
+        onError(error, stackTrace, items);
+      } catch (handlerError, handlerStackTrace) {
+        // Reported rather than swallowed: a handler that fails has taken the
+        // requeue or the logging down with it, which is worse than the flush
+        // failing in the first place.
+        Zone.current.handleUncaughtError(handlerError, handlerStackTrace);
+      }
     }
   }
 }

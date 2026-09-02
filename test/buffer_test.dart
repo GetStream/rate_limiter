@@ -827,6 +827,44 @@ void main() {
       });
     });
 
+    test('should not follow a producer past the batch it measured', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final sent = <List<String>>[];
+        var drained = false;
+
+        final buffered = buffer<String>(
+          (items) {
+            sent.add(items);
+            return sent.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+          maxSize: 2,
+        );
+
+        buffered.addAll(['a', 'b']); // goes at once, and blocks
+        buffered.addAll(['c', 'd']); // what the drain takes the measure of
+
+        buffered.flush().then((_) => drained = true).ignore();
+
+        // Arrives after that measure, and on its own is not a full batch, so
+        // only a drain that overreached would send it.
+        buffered('e');
+
+        blocker.complete();
+        async.flushMicrotasks();
+
+        // The buffer schedules [c, d] itself from the completion handler, so
+        // the drain never sends a batch of its own — it is done all the same.
+        expect(sent, [
+          ['a', 'b'],
+          ['c', 'd'],
+        ]);
+        expect(drained, isTrue, reason: 'its batch is gone, whoever sent it');
+        expect(buffered.length, 1, reason: 'e is the buffer\'s own work');
+      });
+    });
+
     test('should not enrol a flush in what arrives mid-drain', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
@@ -1113,6 +1151,25 @@ void main() {
         buffered('a');
 
         expect(await caught.future, error);
+      }, (e, s) {
+        if (!caught.isCompleted) caught.complete(e);
+      });
+    });
+
+    test('should report an onError that fails itself to the zone', () {
+      final caught = Completer<Object>();
+
+      return runZonedGuarded(() async {
+        final buffered = buffer<String>(
+          (items) async => throw Exception('flush failed'),
+          Duration.zero,
+          // Takes the requeue down with it, so it cannot be swallowed.
+          onError: (e, s, items) => throw StateError('the handler failed too'),
+        );
+
+        buffered('a');
+
+        expect(await caught.future, isA<StateError>());
       }, (e, s) {
         if (!caught.isCompleted) caught.complete(e);
       });
