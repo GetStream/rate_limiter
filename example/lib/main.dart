@@ -36,4 +36,22 @@ void main() {
   for (var i = 0; i < 10000; i++) {
     throttledFunction();
   }
+
+  // prints how many values it was handed at once
+  void printBatchSize(List<int> values) {
+    print('got ${values.length} values');
+  }
+
+  // collects the values it is given and invokes `func` once with all of them,
+  // instead of once per value
+  final bufferedFunction = printBatchSize.buffered(
+    const Duration(milliseconds: 100),
+    maxSize: 1000,
+  );
+
+  // bufferedFunction prints 10 times, once per full buffer, even though
+  // invoked 10000 times — and no value is dropped
+  for (var i = 0; i < 10000; i++) {
+    bufferedFunction(i);
+  }
 }

@@ -1,3 +1,9 @@
+## Unreleased
+
+* Added `Buffer`, which collects the items passed to it and invokes your
+  function once with all of them, instead of once per item.
+* Added `buffered()` on functions taking a `List`, and a top-level `buffer()`.
+
 ## [1.1.1] - (14-08-2026)
 
 * Relaxed the `clock` constraint to `^1.1.1` so packages that depend on
