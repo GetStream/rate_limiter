@@ -865,6 +865,58 @@ void main() {
       });
     });
 
+    test('should not let a shed item take the wait of what replaced it', () {
+      fakeAsync((async) {
+        final sentAt = <int>[];
+
+        final buffered = buffer<String>(
+          (items) => sentAt.add(async.elapsed.inMilliseconds),
+          32.toDuration(),
+          maxQueueSize: 2,
+        );
+
+        buffered('a'); // due at t=32
+        async.elapse(16.toDuration());
+
+        // Sheds 'a', so the wait armed for it belongs to nobody. What is left
+        // arrived at t=16 and is due at t=48.
+        buffered.addAll(['b', 'c']);
+        async.elapse(200.toDuration());
+
+        expect(sentAt, [48]);
+      });
+    });
+
+    test('should not hand a later item an expired wait when batching', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final sentAt = <int>[];
+
+        final buffered = buffer<int>(
+          (items) {
+            sentAt.add(async.elapsed.inMilliseconds);
+            return sentAt.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+          maxSize: 2,
+        );
+
+        buffered(0);
+        async.elapse(32.toDuration()); // sends [0], and blocks
+
+        buffered(1); // due at t=64
+        async.elapse(40.toDuration()); // t=72, so 1 is overdue
+
+        buffered.addAll([2, 3]); // due at t=104
+        blocker.complete();
+        async.elapse(500.toDuration());
+
+        // [1, 2] goes as soon as the queue frees, since 1 was overdue. 3 was
+        // not, and must not inherit the wait that ran out for 1.
+        expect(sentAt, [32, 72, 104]);
+      });
+    });
+
     test('should keep a remainder to its deadline across full batches', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
@@ -1374,9 +1426,10 @@ void main() {
     });
 
     test('should hold its invariants whatever order it is driven in', () {
-      // Two of these are relied on by the implementation: `isPending` reads
-      // the timer rather than counting items, and `flush` hands over the whole
-      // buffer without re-checking `maxSize`.
+      // What this is really for: whatever order the buffer is driven in, it
+      // drains once you stop feeding it, and it never hands over more than it
+      // was told to. Asserting `isPending` here would prove nothing, since it
+      // reads the queue and so is true by definition wherever items are held.
       for (var seed = 0; seed < 200; seed++) {
         final rng = Random(seed);
         final byMaxSize = rng.nextBool();
@@ -1400,13 +1453,7 @@ void main() {
 
           void checkInvariants(String op) {
             final where = 'seed $seed, after $op';
-            if (buffered.length > 0) {
-              expect(
-                buffered.isPending,
-                isTrue,
-                reason: '$where: buffered items with nothing to move them',
-              );
-            }
+
             // `maxSize` bounds each flush, not the buffer: items pile up
             // behind a running flush. Only `maxQueueSize` caps what is held.
             if (!byMaxSize) {
@@ -1438,6 +1485,18 @@ void main() {
                 checkInvariants('elapse');
             }
           }
+
+          // Nothing more goes in, so everything held has to find its way out.
+          // A buffer that never armed a timer, or that dropped a wait when the
+          // head moved, is stuck here rather than merely late.
+          async.elapse(const Duration(minutes: 1));
+
+          expect(
+            buffered.length,
+            0,
+            reason: 'seed $seed: stopped feeding it and it never drained',
+          );
+          expect(buffered.isPending, isFalse, reason: 'seed $seed');
 
           for (final flush in flushes) {
             expect(flush, isNotEmpty, reason: 'seed $seed: flushed nothing');

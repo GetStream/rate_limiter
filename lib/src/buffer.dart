@@ -163,16 +163,18 @@ class Buffer<T> {
   /// the next only once the one before it has finished. With a `maxQueueSize`
   /// set, the excess is dropped as one group rather than an item at a time.
   void addAll(Iterable<T> items) {
-    // Walked before the queue is touched: an iterable that throws part way
-    // would otherwise leave those items in, uncounted and unscheduled. A list
-    // cannot fail part way, so it needs no copy of its own.
-    final incoming = items is List<T> ? items : List.of(items);
-
     final dueAt = clock.now().add(_wait);
-    for (final item in incoming) {
-      _pending.add((item: item, seq: _nextSeq++, dueAt: dueAt));
+
+    // Built before the queue is touched, and before the sequence moves on:
+    // any iterable can fail part way through, and one that does must not
+    // leave items behind uncounted and unscheduled.
+    final incoming = <_Pending<T>>[];
+    for (final item in items) {
+      incoming.add((item: item, seq: _nextSeq + incoming.length, dueAt: dueAt));
     }
 
+    _nextSeq += incoming.length;
+    _pending.addAll(incoming);
     _collect();
   }
 
@@ -246,10 +248,13 @@ class Buffer<T> {
 
     if (_maxQueueSize case final maxQueueSize?
         when _pending.length > maxQueueSize) {
-      _dropDownTo(maxQueueSize);
+      final shed = _shedDownTo(maxQueueSize);
 
-      // The backlog shrank, so whatever is left of it needs its own wait.
+      // The backlog shrank, so whatever is left of it needs its own wait —
+      // settled before `onDrop`, which is free to throw.
       _pump();
+
+      _onDrop?.call(shed);
     }
   }
 
@@ -272,6 +277,16 @@ class Buffer<T> {
     }
 
     _armWait();
+  }
+
+  // The wait belongs to whoever is at the front, so a head that has left takes
+  // its wait with it: the timer was armed for its deadline, and a wait that
+  // ran out for it says nothing about an item that arrived later.
+  void _rewindWait() {
+    _timer?.cancel();
+    _timer = null;
+    _waitIsUp =
+        _pending.isNotEmpty && !clock.now().isBefore(_pending.first.dueAt);
   }
 
   // Waits out the oldest item's deadline, which is carried by the item rather
@@ -344,39 +359,38 @@ class Buffer<T> {
     return flushing;
   }
 
-  void _dropDownTo(int maxQueueSize) {
+  // Sheds down to [maxQueueSize] and hands back what went, for the caller to
+  // report once scheduling has been settled.
+  List<T> _shedDownTo(int maxQueueSize) {
     final excess = _pending.length - maxQueueSize;
 
     final List<_Pending<T>> shed;
     switch (_overflow) {
       case OverflowPolicy.dropOldest:
         shed = List.generate(excess, (_) => _pending.removeFirst());
+        _rewindWait();
       case OverflowPolicy.dropNewest:
         // Off the back, so these arrived last, which is why shedding them can
-        // never settle a drain measured before they turned up. Handed over in
-        // the order they came in.
+        // never settle a drain measured before they turned up, and why the
+        // wait at the front is untouched. Handed over in arrival order.
         shed = List.generate(
           excess,
           (_) => _pending.removeLast(),
         ).reversed.toList();
     }
 
-    _onDrop?.call([for (final pending in shed) pending.item]);
+    return [for (final pending in shed) pending.item];
   }
 
   // Takes up to `count` items off the front, disarming the wait. Taken before
   // `onFlush` is invoked, so anything added while it runs collects into the
   // next batch instead of joining this one.
   List<T> _take(int? count) {
-    _timer?.cancel();
-    _timer = null;
-
     final take =
         (count == null || count > _pending.length) ? _pending.length : count;
     final taken = List.generate(take, (_) => _pending.removeFirst().item);
 
-    // No items left to be waiting for, so the next batch starts a fresh wait.
-    if (_pending.isEmpty) _waitIsUp = false;
+    _rewindWait();
 
     return taken;
   }
