@@ -827,6 +827,89 @@ void main() {
       });
     });
 
+    test('should outlast the flush that carries what it measured', () {
+      fakeAsync((async) {
+        final first = Completer<void>();
+        final second = Completer<void>();
+        final started = <List<String>>[];
+        var drained = false;
+
+        final buffered = buffer<String>(
+          (items) {
+            started.add(items);
+            return started.length == 1 ? first.future : second.future;
+          },
+          32.toDuration(),
+          maxSize: 2,
+        );
+
+        buffered.addAll(['a', 'b']); // goes at once, and blocks
+        buffered.addAll(['c', 'd']); // the snapshot
+        buffered.flush().then((_) => drained = true).ignore();
+
+        // Its completion handler starts [c, d], so the snapshot has left the
+        // buffer — but into a flush that has not finished.
+        first.complete();
+        async.flushMicrotasks();
+
+        expect(started, [
+          ['a', 'b'],
+          ['c', 'd'],
+        ]);
+        expect(drained, isFalse, reason: 'awaiting it must mean it is sent');
+
+        second.complete();
+        async.flushMicrotasks();
+
+        expect(drained, isTrue);
+      });
+    });
+
+    test('should keep a remainder to its deadline across full batches', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final sentAt = <int>[];
+
+        final buffered = buffer<int>(
+          (items) {
+            sentAt.add(async.elapsed.inMilliseconds);
+            return sentAt.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+          maxSize: 2,
+        );
+
+        // All five arrive together, so all five are due at t=32.
+        buffered.addAll([1, 2, 3, 4, 5]);
+        async.elapse(100.toDuration());
+
+        blocker.complete();
+        async.elapse(500.toDuration());
+
+        // The odd one out is overdue by the time its turn comes, so it goes
+        // then rather than starting a window of its own.
+        expect(sentAt, [0, 100, 100]);
+      });
+    });
+
+    test('should leave the buffer alone when an iterable fails part way', () {
+      fakeAsync((async) {
+        final flushes = <List<int>>[];
+        final buffered = buffer<int>(flushes.add, 32.toDuration());
+
+        expect(
+          () => buffered.addAll(_failsAfter(3)),
+          throwsA(isA<StateError>()),
+        );
+
+        expect(buffered.length, 0, reason: 'nothing half-added');
+        expect(buffered.isPending, isFalse);
+
+        async.elapse(128.toDuration());
+        expect(flushes, isEmpty);
+      });
+    });
+
     test('should not let shedding the newest satisfy a drain', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
@@ -1455,4 +1538,13 @@ void main() {
       });
     });
   });
+}
+
+// Yields [count] values and then fails, the way a lazy source backed by a
+// stream or a database cursor can.
+Iterable<int> _failsAfter(int count) sync* {
+  for (var i = 0; i < count; i++) {
+    yield i;
+  }
+  throw StateError('iteration failed');
 }

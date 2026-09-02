@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:clock/clock.dart';
+
 /// Invoked with every item a [Buffer] collected, in the order they arrived.
 typedef BufferFlushCallback<T> = FutureOr<void> Function(List<T> items);
 
@@ -128,8 +130,16 @@ class Buffer<T> {
   // Never carries its error, so a failed flush cannot wedge the queue.
   Future<void>? _inFlight;
 
-  // Set when a buffer came due while a flush was running, so the wait is not
-  // served twice over.
+  // The sequence of the first item that flush is carrying, so a drain can tell
+  // whether it is holding part of the batch that drain measured.
+  var _inFlightFrom = 0;
+
+  // The window of the batch now collecting: when it comes due, and whether
+  // its timer has already fired. Both outlive a chunk going out, because a
+  // remainder is as old as the items it is made of and a full batch leaving
+  // ahead of it must not buy it a fresh window. Cleared together, and only
+  // once the buffer is empty.
+  DateTime? _dueAt;
   var _isDue = false;
 
   // Sequence numbers for the two ends of the queue, so a drain can tell
@@ -150,11 +160,7 @@ class Buffer<T> {
   bool get isPending => _timer != null || _inFlight != null;
 
   /// Adds [item] to the buffer, arming the flush if it is the first one in.
-  void call(T item) {
-    _items.add(item);
-    _tail++;
-    _collect();
-  }
+  void call(T item) => addAll([item]);
 
   /// Adds every item in [items] to the buffer.
   ///
@@ -162,9 +168,13 @@ class Buffer<T> {
   /// the next only once the one before it has finished. With a `maxQueueSize`
   /// set, the excess is dropped as one group rather than an item at a time.
   void addAll(Iterable<T> items) {
-    final held = _items.length;
-    _items.addAll(items);
-    _tail += _items.length - held;
+    // Walked before the queue is touched: an iterable that throws part way
+    // would otherwise leave those items in, uncounted and unscheduled. A list
+    // cannot fail part way, so it needs no copy of its own.
+    final incoming = items is List<T> ? items : List.of(items);
+
+    _items.addAll(incoming);
+    _tail += incoming.length;
     _collect();
   }
 
@@ -196,6 +206,7 @@ class Buffer<T> {
   void cancel() {
     _timer?.cancel();
     _timer = null;
+    _dueAt = null;
     _isDue = false;
     _head = _tail;
     _items.clear();
@@ -211,6 +222,12 @@ class Buffer<T> {
   // as long as one kept feeding it.
   Future<void> _drainUntil(int target) {
     if (_head >= target || _items.isEmpty) {
+      // The batch has left the buffer, but a flush still running may be the
+      // one carrying it, and this has to outlast that to be worth awaiting.
+      if (_inFlight case final inFlight? when _inFlightFrom < target) {
+        return inFlight.then((_) => _drainUntil(target));
+      }
+
       // Hands back anything that arrived while this was draining. A batch of
       // its own does not pump on the way out, to keep its failures answerable
       // here, so without this those items would sit with nothing to move them.
@@ -266,9 +283,12 @@ class Buffer<T> {
   // Does nothing when the buffer is empty, or when it is already overdue and
   // only waiting for its turn at the queue.
   void _armWait() {
-    if (_items.isEmpty || _isDue) return;
+    if (_items.isEmpty || _isDue || _timer != null) return;
 
-    _timer ??= Timer(_wait, _onDue);
+    // Timed against the batch's own deadline, which a chunk leaving ahead of
+    // it does not reset, so a remainder is not given a fresh window.
+    final dueAt = _dueAt ??= clock.now().add(_wait);
+    _timer = Timer(dueAt.difference(clock.now()), _onDue);
   }
 
   void _onDue() {
@@ -286,6 +306,7 @@ class Buffer<T> {
   // With `report`, a failure goes to `onError`; without it, the failure is
   // left on the returned future for whoever asked for the flush.
   Future<void> _startFlush({required bool report}) {
+    final from = _head;
     final items = _take(_maxSize);
 
     // A completer rather than the flush itself: `onFlush` is invoked
@@ -293,6 +314,7 @@ class Buffer<T> {
     // after the window this is closing.
     final settled = Completer<void>();
     _inFlight = settled.future;
+    _inFlightFrom = from;
 
     // Timed before the callback runs: `onFlush` may work synchronously for a
     // while, and a remainder's wait should run from now rather than from
@@ -358,12 +380,20 @@ class Buffer<T> {
   List<T> _take(int? count) {
     _timer?.cancel();
     _timer = null;
-    _isDue = false;
 
     final take =
         (count == null || count > _items.length) ? _items.length : count;
     _head += take;
-    return List.generate(take, (_) => _items.removeFirst());
+    final taken = List.generate(take, (_) => _items.removeFirst());
+
+    // The window belongs to the items, not to the batch that just left it, so
+    // it is only over once there are none of them.
+    if (_items.isEmpty) {
+      _dueAt = null;
+      _isDue = false;
+    }
+
+    return taken;
   }
 
   // Hands the items over, turning whatever `onFlush` returns into a future so
