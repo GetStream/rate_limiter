@@ -132,9 +132,12 @@ class Buffer<T> {
   // served twice over.
   var _isDue = false;
 
-  // Counts every item that has left the buffer, whether it was sent, shed or
-  // discarded, so a drain can tell when the batch it measured has gone.
-  var _removed = 0;
+  // Sequence numbers for the two ends of the queue, so a drain can tell
+  // whether the items it measured have really gone rather than just counting
+  // removals. Shedding the newest moves the tail back, which must not satisfy
+  // a snapshot taken before those items even arrived.
+  var _head = 0;
+  var _tail = 0;
 
   /// The number of items waiting to get flushed.
   ///
@@ -149,6 +152,7 @@ class Buffer<T> {
   /// Adds [item] to the buffer, arming the flush if it is the first one in.
   void call(T item) {
     _items.add(item);
+    _tail++;
     _collect();
   }
 
@@ -158,7 +162,9 @@ class Buffer<T> {
   /// the next only once the one before it has finished. With a `maxQueueSize`
   /// set, the excess is dropped as one group rather than an item at a time.
   void addAll(Iterable<T> items) {
+    final held = _items.length;
     _items.addAll(items);
+    _tail += _items.length - held;
     _collect();
   }
 
@@ -180,7 +186,7 @@ class Buffer<T> {
     // just arrived, and enrol this caller in sending them.
     if (_items.isEmpty) return _inFlight ?? Future.value();
 
-    return _drainUntil(_removed + _items.length);
+    return _drainUntil(_tail);
   }
 
   /// Discards the collected items without invoking `onFlush`.
@@ -191,7 +197,7 @@ class Buffer<T> {
     _timer?.cancel();
     _timer = null;
     _isDue = false;
-    _removed += _items.length;
+    _head = _tail;
     _items.clear();
   }
 
@@ -204,7 +210,7 @@ class Buffer<T> {
   // Counting only its own would leave a drain following a steady producer for
   // as long as one kept feeding it.
   Future<void> _drainUntil(int target) {
-    if (_removed >= target || _items.isEmpty) {
+    if (_head >= target || _items.isEmpty) {
       // Hands back anything that arrived while this was draining. A batch of
       // its own does not pump on the way out, to keep its failures answerable
       // here, so without this those items would sit with nothing to move them.
@@ -325,19 +331,22 @@ class Buffer<T> {
 
   void _dropDownTo(int maxQueueSize) {
     final excess = _items.length - maxQueueSize;
-    _removed += excess;
 
-    final dropped = switch (_overflow) {
-      OverflowPolicy.dropOldest => List.generate(
-          excess,
-          (_) => _items.removeFirst(),
-        ),
-      // Taken off the back, then put back in the order they arrived.
-      OverflowPolicy.dropNewest => List.generate(
+    final List<T> dropped;
+    switch (_overflow) {
+      case OverflowPolicy.dropOldest:
+        // Off the front, so a drain waiting on these can stop waiting.
+        _head += excess;
+        dropped = List.generate(excess, (_) => _items.removeFirst());
+      case OverflowPolicy.dropNewest:
+        // Off the back, so these arrived last and cannot belong to a snapshot
+        // taken before them. Put back in the order they came in.
+        _tail -= excess;
+        dropped = List.generate(
           excess,
           (_) => _items.removeLast(),
-        ).reversed.toList(),
-    };
+        ).reversed.toList();
+    }
 
     _onDrop?.call(dropped);
   }
@@ -353,7 +362,7 @@ class Buffer<T> {
 
     final take =
         (count == null || count > _items.length) ? _items.length : count;
-    _removed += take;
+    _head += take;
     return List.generate(take, (_) => _items.removeFirst());
   }
 

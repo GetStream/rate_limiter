@@ -827,6 +827,44 @@ void main() {
       });
     });
 
+    test('should not let shedding the newest satisfy a drain', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final sent = <List<String>>[];
+        var drained = false;
+
+        final buffered = buffer<String>(
+          (items) {
+            sent.add(items);
+            return sent.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+          maxQueueSize: 2,
+          overflow: OverflowPolicy.dropNewest,
+        );
+
+        buffered('z');
+        async.elapse(32.toDuration()); // the flush of z starts, and blocks
+
+        buffered.addAll(['a', 'b']);
+        buffered.flush().then((_) => drained = true).ignore();
+
+        // Over the cap, so these are shed. They arrived after the drain took
+        // its measure, so shedding them settles nothing it was waiting for.
+        buffered.addAll(['c', 'd']);
+
+        blocker.complete();
+        async.flushMicrotasks();
+
+        expect(sent, [
+          ['z'],
+          ['a', 'b'],
+        ]);
+        expect(drained, isTrue, reason: 'and only once its own items went');
+        expect(buffered.length, 0);
+      });
+    });
+
     test('should hand back what came due behind a slow drain', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
