@@ -527,6 +527,46 @@ void main() {
       });
     });
 
+    test('should hold a remainder to its own deadline, not the flush ahead',
+        () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final flushes = <List<int>>[];
+
+        final buffered = buffer<int>(
+          (items) {
+            flushes.add(items);
+            return flushes.length == 1 ? blocker.future : null;
+          },
+          500.toDuration(),
+          maxSize: 2,
+        );
+
+        // [1, 2] fills a batch and goes; 3 stays behind with its own window
+        // running from now.
+        buffered.addAll([1, 2, 3]);
+
+        expect(flushes, [
+          [1, 2],
+        ]);
+
+        // The batch ahead of it takes far longer than that window.
+        async.elapse(2000.toDuration());
+        expect(flushes.length, 1, reason: 'still waiting for the queue');
+
+        blocker.complete();
+        async.flushMicrotasks();
+
+        expect(
+            flushes,
+            [
+              [1, 2],
+              [3],
+            ],
+            reason: '3 was overdue, so it went as soon as its turn came');
+      });
+    });
+
     test('should go straight out when a wait was served during a flush', () {
       fakeAsync((async) {
         final started = <List<String>>[];
@@ -1193,17 +1233,19 @@ void main() {
       }
     });
 
+    // Thrown rather than asserted: asserts are stripped in release, and a
+    // maxSize of zero leaves the buffer spinning on empty flushes there.
     test('should reject a maxSize that can never fill', () {
       expect(
         () => Buffer<int>((items) {}, Duration.zero, maxSize: 0),
-        throwsA(isA<AssertionError>()),
+        throwsA(isA<ArgumentError>()),
       );
     });
 
     test('should reject a maxQueueSize that can never hold anything', () {
       expect(
-        () => Buffer<int>((items) {}, Duration.zero, maxQueueSize: 0),
-        throwsA(isA<AssertionError>()),
+        () => Buffer<int>((items) {}, Duration.zero, maxQueueSize: -1),
+        throwsA(isA<ArgumentError>()),
       );
     });
 

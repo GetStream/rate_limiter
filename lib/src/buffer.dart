@@ -91,20 +91,21 @@ class Buffer<T> {
     OverflowPolicy overflow = OverflowPolicy.dropOldest,
     BufferErrorCallback<T>? onError,
     BufferDropCallback<T>? onDrop,
-  })  : assert(
-          maxSize == null || maxSize > 0,
-          'maxSize must be greater than 0',
-        ),
-        assert(
-          maxQueueSize == null || maxQueueSize > 0,
-          'maxQueueSize must be greater than 0',
-        ),
-        _wait = wait,
-        _maxSize = maxSize,
-        _maxQueueSize = maxQueueSize,
+  })  : _wait = wait,
+        _maxSize = _checkPositive(maxSize, 'maxSize'),
+        _maxQueueSize = _checkPositive(maxQueueSize, 'maxQueueSize'),
         _overflow = overflow,
         _onError = onError,
         _onDrop = onDrop;
+
+  // Checked rather than asserted, because asserts are stripped in release and
+  // a `maxSize` of zero is worse than a crash there: every buffer looks full
+  // while each flush takes nothing out of it, so it spins sending empty
+  // batches and never sends the items it holds.
+  static int? _checkPositive(int? limit, String name) {
+    if (limit == null || limit > 0) return limit;
+    throw ArgumentError.value(limit, name, 'must be greater than zero');
+  }
 
   final BufferFlushCallback<T> _onFlush;
   final Duration _wait;
@@ -213,19 +214,18 @@ class Buffer<T> {
   // Starts a flush if one is due and none is running, otherwise arms the wait.
   // Re-entered when a flush settles, so the buffer drains one flush at a time.
   void _pump() {
-    if (_items.isEmpty) return;
-
-    if (_isDue || _isFull) {
-      // One at a time. Whoever is flushing pumps again on the way out, so
-      // these go as soon as it is done rather than waiting all over again.
-      if (_inFlight != null) return;
-
+    // One at a time. Whoever is flushing pumps again on the way out, so a
+    // batch that came due meanwhile goes then rather than waiting afresh.
+    if (_inFlight == null && (_isDue || _isFull)) {
       _startFlush(report: true);
-      return;
     }
 
-    // Armed even behind a running flush: the wait is how long these items are
-    // willing to sit for company, not a queue behind the flush ahead of them.
+    // Nothing left to time, or already overdue and only waiting for its turn.
+    if (_items.isEmpty || _isDue) return;
+
+    // Armed behind a running flush, and for a remainder the batch just sent
+    // left behind: the wait runs from when these items arrived, not from
+    // whenever the flush ahead of them happens to finish.
     _timer ??= Timer(_wait, _onDue);
   }
 
