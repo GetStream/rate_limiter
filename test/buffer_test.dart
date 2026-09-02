@@ -827,6 +827,39 @@ void main() {
       });
     });
 
+    test('should hand back what came due behind a slow drain', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final sent = <List<String>>[];
+
+        final buffered = buffer<String>(
+          (items) {
+            sent.add(items);
+            return sent.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+        );
+
+        buffered('a');
+        buffered.flush().ignore(); // takes a, and blocks
+
+        buffered('b');
+        async.elapse(50.toDuration()); // b comes due while the drain runs
+
+        blocker.complete();
+        async.flushMicrotasks();
+
+        // The drain is finished, so what it was not measuring has to go back
+        // under the buffer's own ownership rather than sit unowned.
+        expect(sent, [
+          ['a'],
+          ['b'],
+        ]);
+        expect(buffered.length, 0);
+        expect(buffered.isPending, isFalse);
+      });
+    });
+
     test('should not follow a producer past the batch it measured', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
@@ -1228,10 +1261,17 @@ void main() {
         final byMaxSize = rng.nextBool();
         final limit = 1 + rng.nextInt(4);
 
+        // Half the seeds flush slowly, so items come due while a flush is
+        // still running. Every strand bug so far has hidden in that window.
+        final slowFlush = rng.nextBool();
+
         fakeAsync((async) {
           final flushes = <List<int>>[];
           final buffered = Buffer<int>(
-            flushes.add,
+            (items) {
+              flushes.add(items);
+              return slowFlush ? Future<void>.delayed(25.toDuration()) : null;
+            },
             10.toDuration(),
             maxSize: byMaxSize ? limit : null,
             maxQueueSize: byMaxSize ? null : limit,

@@ -204,13 +204,17 @@ class Buffer<T> {
   // Counting only its own would leave a drain following a steady producer for
   // as long as one kept feeding it.
   Future<void> _drainUntil(int target) {
-    if (_removed >= target) return Future.value();
+    if (_removed >= target || _items.isEmpty) {
+      // Hands back anything that arrived while this was draining. A batch of
+      // its own does not pump on the way out, to keep its failures answerable
+      // here, so without this those items would sit with nothing to move them.
+      _pump();
+      return Future.value();
+    }
 
     if (_inFlight case final inFlight?) {
       return inFlight.then((_) => _drainUntil(target));
     }
-
-    if (_items.isEmpty) return Future.value();
 
     return _startFlush(report: false).then((_) => _drainUntil(target));
   }
