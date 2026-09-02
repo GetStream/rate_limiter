@@ -33,9 +33,10 @@ enum OverflowPolicy {
 /// [Buffer.flush] method to invoke `onFlush` immediately.
 ///
 /// Only one flush runs at a time. Items arriving while `onFlush` is working
-/// collect for the next one, which goes out as soon as the current one
-/// finishes rather than waiting all over again — so `wait` is how long items
-/// sit for company, never a queue behind the flush ahead of them.
+/// collect for the next one, which goes out once it has come due — `wait`
+/// after its own first item landed, or on reaching `maxSize` — and the running
+/// flush has finished, whichever is later. A batch that came due while a flush
+/// was running does not then serve its wait a second time.
 ///
 /// By default nothing is dropped and no caller is ever slowed down: this is
 /// not a capacity buffer. `maxSize` caps what any one flush carries, and
@@ -191,12 +192,17 @@ class Buffer<T> {
   // Shared by `call` and `addAll` so a bulk add costs one pass, and so a
   // group that overflows is reported to `onDrop` in one piece.
   void _collect() {
+    // Hands off what can go right now, so a group arriving all at once is not
+    // capped against a batch that was never going to sit in the backlog.
+    _pump();
+
     if (_maxQueueSize case final maxQueueSize?
         when _items.length > maxQueueSize) {
       _dropDownTo(maxQueueSize);
-    }
 
-    _pump();
+      // The backlog shrank, so whatever is left of it needs its own wait.
+      _pump();
+    }
   }
 
   bool get _isFull {
@@ -248,16 +254,30 @@ class Buffer<T> {
 
     final flushing = report ? _invokeAndReport(items) : _invoke(items);
 
-    // `whenComplete` runs whichever way it ends, and `ignore` takes the error
-    // off this derived future, so a failure cannot wedge the queue.
-    flushing.whenComplete(() {
+    void release() {
       _inFlight = null;
       settled.complete();
+    }
 
-      // Only the scheduled path pumps. An explicit flush drives its own drain,
-      // which is what keeps every chunk it sends answerable to its caller.
-      if (report) _pump();
-    }).ignore();
+    // `ignore` takes the error off this derived future, so a failure cannot
+    // wedge the queue.
+    flushing.then(
+      (_) {
+        release();
+
+        // Only the scheduled path pumps on the way out. An explicit flush
+        // drives its own drain, which is what keeps every chunk it sends
+        // answerable to its caller.
+        if (report) _pump();
+      },
+      onError: (Object _, StackTrace __) {
+        release();
+
+        // An explicit drain stops at its first failure, so without this the
+        // items queued behind it would sit with nothing left to move them.
+        _pump();
+      },
+    ).ignore();
 
     return flushing;
   }

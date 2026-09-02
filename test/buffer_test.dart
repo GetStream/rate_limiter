@@ -682,6 +682,74 @@ void main() {
       });
     });
 
+    test('should keep the queue moving when an explicit flush fails', () {
+      fakeAsync((async) {
+        final blocker = Completer<void>();
+        final flushes = <List<String>>[];
+
+        final buffered = buffer<String>(
+          (items) {
+            flushes.add(items);
+            return flushes.length == 1 ? blocker.future : null;
+          },
+          32.toDuration(),
+          maxSize: 2,
+          onError: (e, s, items) {},
+        );
+
+        buffered('a');
+        buffered.flush().then((_) {}, onError: (Object _) {}).ignore();
+
+        // One call, so this goes straight to the full branch and never arms a
+        // wait of its own. The failed drain is all that could move it.
+        buffered.addAll(['b', 'c']);
+
+        blocker.completeError(Exception('flush failed'));
+        async.flushMicrotasks();
+
+        expect(
+            flushes,
+            [
+              ['a'],
+              ['b', 'c'],
+            ],
+            reason: 'a failed drain must not strand what queued behind it');
+        expect(buffered.length, 0);
+        expect(buffered.isPending, isFalse);
+      });
+    });
+
+    test('should send what it can before capping the backlog', () {
+      fakeAsync((async) {
+        final flushes = <List<int>>[];
+        final drops = <List<int>>[];
+        final blocker = Completer<void>();
+
+        final buffered = buffer<int>(
+          (items) {
+            flushes.add(items);
+            return blocker.future;
+          },
+          32.toDuration(),
+          maxSize: 2,
+          maxQueueSize: 3,
+          onDrop: drops.add,
+        );
+
+        buffered.addAll([1, 2, 3, 4, 5, 6]);
+
+        // Nothing was running, so [1, 2] takes the batch and only what is
+        // genuinely backlog gets measured against maxQueueSize.
+        expect(flushes, [
+          [1, 2],
+        ]);
+        expect(drops, [
+          [3],
+        ]);
+        expect(buffered.length, 3);
+      });
+    });
+
     test('should wait out the running flush and no more when empty', () {
       fakeAsync((async) {
         final blocker = Completer<void>();

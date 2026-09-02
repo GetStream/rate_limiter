@@ -170,7 +170,7 @@ final response = backOff(
 ### Buffer
 A _buffered function_ collects the items passed to it and invokes your function **once** with all of them, rather than once per item. Where debounce and throttle keep only the last call's arguments and drop the rest, a buffer keeps every one — so it batches work instead of shedding it.
 
-The buffer is flushed once `wait` has passed since the first item landed in it, or as soon as it holds `maxSize` items, whichever comes first. Only one flush runs at a time: while your function is working, arriving items collect for the next one, which goes out the moment the current one finishes. By default nothing is dropped and no caller is ever slowed down — pass `maxQueueSize` to cap the buffer and shed the excess instead.
+The buffer is flushed once `wait` has passed since the first item landed in it, or as soon as it holds `maxSize` items, whichever comes first. Only one flush runs at a time: while your function is working, arriving items collect for the next one, which goes out once it has come due *and* the running one has finished — whichever is later. By default nothing is dropped and no caller is ever slowed down — pass `maxQueueSize` to cap the buffer and shed the excess instead.
 
 #### Usage
 1. Creating from scratch
