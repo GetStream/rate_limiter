@@ -827,18 +827,19 @@ void main() {
       });
     });
 
-    test('should answer to flush for every chunk flush itself sent', () {
+    test('should not enrol a flush in what arrives mid-drain', () {
       fakeAsync((async) {
         final blocker = Completer<void>();
         var calls = 0;
         Object? caughtByFlush;
         Object? caughtByOnError;
+        var drained = false;
 
         final buffered = buffer<String>(
           (items) {
             calls++;
             if (calls == 1) return blocker.future;
-            throw Exception('the second chunk failed');
+            throw Exception('the later batch failed');
           },
           32.toDuration(),
           maxSize: 2,
@@ -846,11 +847,12 @@ void main() {
         );
 
         buffered('a');
-        buffered.flush().then((_) {}, onError: (Object e) {
+        buffered.flush().then((_) => drained = true, onError: (Object e) {
           caughtByFlush = e;
         }).ignore();
 
-        // Arriving mid-drain, so the drain picks them up as its second chunk.
+        // Arriving after the drain took its measure, so these are the
+        // buffer's own work rather than the caller's.
         buffered('b');
         buffered('c');
 
@@ -858,9 +860,9 @@ void main() {
         async.elapse(32.toDuration());
 
         expect(calls, 2);
-        expect(caughtByFlush, isNotNull, reason: 'the drain sent it');
-        expect(caughtByOnError, isNull,
-            reason: 'so onError has nothing to say');
+        expect(drained, isTrue, reason: 'the one item it took went out');
+        expect(caughtByFlush, isNull, reason: 'the caller did not send those');
+        expect(caughtByOnError, isNotNull, reason: 'so the buffer answers');
       });
     });
 

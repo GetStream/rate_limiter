@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 /// Invoked with every item a [Buffer] collected, in the order they arrived.
 typedef BufferFlushCallback<T> = FutureOr<void> Function(List<T> items);
@@ -115,7 +116,10 @@ class Buffer<T> {
   final BufferErrorCallback<T>? _onError;
   final BufferDropCallback<T>? _onDrop;
 
-  final _items = <T>[];
+  // A queue rather than a list, so taking a batch off the front and shedding
+  // the oldest are both cheap. Draining N items through a list would move
+  // O(N^2) elements, since every removal shifts everything behind it.
+  final _items = ListQueue<T>();
   Timer? _timer;
 
   // Settles when the flush running right now finishes, however it finishes.
@@ -165,18 +169,12 @@ class Buffer<T> {
   /// So a drain that waits out a flush already running can complete normally
   /// even though that flush failed — `onError` was told instead.
   Future<void> flush() {
-    if (_inFlight case final inFlight?) {
-      // Already empty, so the flush running is all there is left to wait for.
-      // Draining past it would cut short the window of items that have only
-      // just arrived, and enrol this caller in sending them.
-      if (_items.isEmpty) return inFlight;
+    // Already empty, so the flush running is all there is left to wait for.
+    // Draining past it would cut short the window of items that have only
+    // just arrived, and enrol this caller in sending them.
+    if (_items.isEmpty) return _inFlight ?? Future.value();
 
-      return inFlight.then((_) => flush());
-    }
-
-    if (_items.isEmpty) return Future.value();
-
-    return _startFlush(report: false).then((_) => flush());
+    return _drain(_items.length);
   }
 
   /// Discards the collected items without invoking `onFlush`.
@@ -188,6 +186,27 @@ class Buffer<T> {
     _timer = null;
     _isDue = false;
     _items.clear();
+  }
+
+  // Hands over [remaining] items, a batch at a time, waiting out anything
+  // already running first.
+  //
+  // Counted rather than draining until empty, so a caller of `flush` is not
+  // made to send whatever arrives while it waits — under a producer that never
+  // stops, that future would never complete.
+  Future<void> _drain(int remaining) {
+    if (remaining <= 0 || _items.isEmpty) return Future.value();
+
+    if (_inFlight case final inFlight?) {
+      return inFlight.then((_) => _drain(remaining));
+    }
+
+    final sending = switch (_maxSize) {
+      final maxSize? when maxSize < _items.length => maxSize,
+      _ => _items.length,
+    };
+
+    return _startFlush(report: false).then((_) => _drain(remaining - sending));
   }
 
   // Shared by `call` and `addAll` so a bulk add costs one pass, and so a
@@ -217,15 +236,22 @@ class Buffer<T> {
     // One at a time. Whoever is flushing pumps again on the way out, so a
     // batch that came due meanwhile goes then rather than waiting afresh.
     if (_inFlight == null && (_isDue || _isFull)) {
+      // Arms the remainder itself, before the callback gets a chance to run.
       _startFlush(report: true);
+      return;
     }
 
-    // Nothing left to time, or already overdue and only waiting for its turn.
+    _armWait();
+  }
+
+  // Starts the wait for whatever is held, so it runs from when those items
+  // arrived rather than from whenever the flush ahead of them finishes.
+  //
+  // Does nothing when the buffer is empty, or when it is already overdue and
+  // only waiting for its turn at the queue.
+  void _armWait() {
     if (_items.isEmpty || _isDue) return;
 
-    // Armed behind a running flush, and for a remainder the batch just sent
-    // left behind: the wait runs from when these items arrived, not from
-    // whenever the flush ahead of them happens to finish.
     _timer ??= Timer(_wait, _onDue);
   }
 
@@ -251,6 +277,11 @@ class Buffer<T> {
     // after the window this is closing.
     final settled = Completer<void>();
     _inFlight = settled.future;
+
+    // Timed before the callback runs: `onFlush` may work synchronously for a
+    // while, and a remainder's wait should run from now rather than from
+    // whenever that work returns.
+    _armWait();
 
     final flushing = report ? _invokeAndReport(items) : _invoke(items);
 
@@ -284,13 +315,18 @@ class Buffer<T> {
 
   void _dropDownTo(int maxQueueSize) {
     final excess = _items.length - maxQueueSize;
-    final from = switch (_overflow) {
-      OverflowPolicy.dropOldest => 0,
-      OverflowPolicy.dropNewest => maxQueueSize,
-    };
 
-    final dropped = _items.sublist(from, from + excess);
-    _items.removeRange(from, from + excess);
+    final dropped = switch (_overflow) {
+      OverflowPolicy.dropOldest => List.generate(
+          excess,
+          (_) => _items.removeFirst(),
+        ),
+      // Taken off the back, then put back in the order they arrived.
+      OverflowPolicy.dropNewest => List.generate(
+          excess,
+          (_) => _items.removeLast(),
+        ).reversed.toList(),
+    };
 
     _onDrop?.call(dropped);
   }
@@ -306,9 +342,7 @@ class Buffer<T> {
 
     final take =
         (count == null || count > _items.length) ? _items.length : count;
-    final items = _items.sublist(0, take);
-    _items.removeRange(0, take);
-    return items;
+    return List.generate(take, (_) => _items.removeFirst());
   }
 
   // Hands the items over, turning whatever `onFlush` returns into a future so
