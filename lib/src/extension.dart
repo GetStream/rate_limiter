@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'backoff.dart';
+import 'buffer.dart';
 import 'debounce.dart';
 import 'throttle.dart';
 
@@ -22,6 +23,31 @@ extension BackOffExtension<T> on FutureOr<T> Function() {
         maxAttempts: maxAttempts,
         retryIf: retry,
       ).call();
+}
+
+/// Useful rate limiter extensions for [Function] class.
+///
+/// Deliberately not [BufferFlushCallback], which returns `FutureOr<void>`: a
+/// plain `void` function is a subtype of this, so both shapes resolve here.
+extension BufferExtension<T> on void Function(List<T> items) {
+  /// Converts this into a [Buffer] function.
+  Buffer<T> buffered(
+    Duration wait, {
+    int? maxSize,
+    int? maxQueueSize,
+    OverflowPolicy overflow = OverflowPolicy.dropOldest,
+    BufferErrorCallback<T>? onError,
+    BufferDropCallback<T>? onDrop,
+  }) =>
+      Buffer(
+        this,
+        wait,
+        maxSize: maxSize,
+        maxQueueSize: maxQueueSize,
+        overflow: overflow,
+        onError: onError,
+        onDrop: onDrop,
+      );
 }
 
 /// Useful rate limiter extensions for [Function] class.
@@ -87,6 +113,26 @@ Debounce debounce(
       leading: leading,
       trailing: trailing,
       maxWait: maxWait,
+    );
+
+/// TopLevel lambda to create [Buffer] functions.
+Buffer<T> buffer<T>(
+  BufferFlushCallback<T> onFlush,
+  Duration wait, {
+  int? maxSize,
+  int? maxQueueSize,
+  OverflowPolicy overflow = OverflowPolicy.dropOldest,
+  BufferErrorCallback<T>? onError,
+  BufferDropCallback<T>? onDrop,
+}) =>
+    Buffer(
+      onFlush,
+      wait,
+      maxSize: maxSize,
+      maxQueueSize: maxQueueSize,
+      overflow: overflow,
+      onError: onError,
+      onDrop: onDrop,
     );
 
 /// TopLevel lambda to create [Throttle] functions.

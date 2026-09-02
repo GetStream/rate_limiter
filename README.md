@@ -18,6 +18,7 @@ _Rate limiting_ is a strategy for limiting an action. It puts a cap on how often
 	- [Debounce](#debounce)
 	- [Throttle](#throttle)
     - [BackOff](#backoff)
+    - [Buffer](#buffer)
 - [Pending](#pending)
 - [Flush](#flush)
 - [Cancellation](#cancellation)
@@ -166,11 +167,96 @@ final response = backOff(
 );
 ```
 
+### Buffer
+A _buffered function_ collects the items passed to it and invokes your function **once** with all of them, rather than once per item. Where debounce and throttle keep only the last call's arguments and drop the rest, a buffer keeps every one — so it batches work instead of shedding it.
+
+The buffer is flushed once `wait` has passed since the first item landed in it, or as soon as it holds `maxSize` items, whichever comes first. Only one flush runs at a time: while your function is working, arriving items collect for the next one, which goes out the moment the current one finishes. By default nothing is dropped and no caller is ever slowed down — pass `maxQueueSize` to cap the buffer and shed the excess instead.
+
+#### Usage
+1. Creating from scratch
+```dart
+final markRead = buffer<String>((ids) {
+  print('Marking ${ids.length} messages read');
+  return api.markAllRead(ids);
+}, const Duration(milliseconds: 500), maxSize: 25);
+```
+2. Converting an existing function into buffered function
+```dart
+Future<void> markAllRead(List<String> ids) => api.markAllRead(ids);
+
+final markRead = markAllRead.buffered(
+  const Duration(milliseconds: 500),
+  maxSize: 25,
+);
+```
+
+#### Example
+Marking messages read as the user scrolls calls `markRead` once per message. Debouncing it would send only the last id and lose the other nineteen; buffering sends one request carrying all twenty.
+```dart
+void onMessageSeen(String id) {
+  markRead(id);
+}
+```
+
+Passing `Duration.zero` batches everything queued up in the current event loop turn, which is how a data loader collapses a screen's worth of lookups into one request.
+```dart
+final loadUsers = buffer<String>(
+  (ids) => api.getUsers(ids),
+  Duration.zero,
+);
+```
+
+A producer faster than `onFlush` can grow the buffer without bound. `maxQueueSize` caps it, `overflow` picks which end goes, and `onDrop` reports what that cost.
+```dart
+final trackEvent = buffer<Event>(
+  (events) => analytics.send(events),
+  const Duration(seconds: 5),
+  maxQueueSize: 10000,
+  overflow: OverflowPolicy.dropOldest, // or dropNewest, to keep what is waiting
+  onDrop: (events) => log.warning('dropped ${events.length} events'),
+);
+```
+
+The two caps work on different things and compose: `maxSize` limits what any one flush carries, `maxQueueSize` limits the backlog that builds up behind a flush still running.
+
+Because no caller is waiting on a scheduled flush, failures go to `onError` instead — which is also handed the items, so they can be re-queued rather than lost.
+```dart
+final markRead = buffer<String>(
+  (ids) => api.markAllRead(ids),
+  const Duration(milliseconds: 500),
+  onError: (error, stackTrace, ids) => retryQueue.addAll(ids),
+);
+```
+
+Handing them back to the buffer retries them on the next flush:
+```dart
+late final markRead = buffer<String>(
+  (ids) => api.markAllRead(ids),
+  const Duration(milliseconds: 500),
+  onError: (error, stackTrace, ids) => markRead.addAll(ids),
+);
+```
+Retried items go to the back of the buffer, so their order is not preserved, and nothing spaces the attempts out. For that, put [backOff](#backoff) inside the flush instead:
+```dart
+final markRead = buffer<String>(
+  (ids) => backOff(
+    () => api.markAllRead(ids),
+    maxAttempts: 4,
+    retryIf: (error, attempt) => error is SocketException,
+  ),
+  const Duration(milliseconds: 500),
+  // Reached only once backoff has run out of attempts.
+  onError: (error, stackTrace, ids) => log.warning('gave up on ${ids.length}'),
+);
+```
+Every attempt re-sends the same batch, `onError` fires once at the end rather than per attempt, and `await markRead.flush()` waits the retries out. Pick one of the two though — requeuing through `onError` *and* retrying with `backOff` compounds the two schedules.
+
 ### Pending
 Used to check if the there are functions still remaining to get invoked.
 ```dart
 final pending = debouncedFunction.isPending;
 final pending = throttledFunction.isPending;
+final pending = bufferedFunction.isPending;
 ```
 
 ### Flush
@@ -178,6 +264,9 @@ Used to immediately invoke all the remaining delayed functions.
 ```dart
 final result = debouncedFunction.flush();
 final result = throttledFunction.flush();
+// A buffer's flush covers the items it holds right now, and completes once
+// your function does, so it can be awaited before going away.
+await bufferedFunction.flush();
 ```
 
 ### Cancellation
@@ -185,4 +274,6 @@ Used to cancel all the remaining delayed functions.
 ```dart
 debouncedFunction.cancel();  
 throttledFunction.cancel();
+// Discards the items collected so far, without invoking your function.
+bufferedFunction.cancel();
 ```
